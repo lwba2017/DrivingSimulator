@@ -80,7 +80,7 @@ def interpolate_polyline(coords, step_meters=10.0):
 
 
 async def fetch_osrm_route(session, start, end):
-    """使用开源 OSRM 接口免费规划驾车路径（免 API Key）"""
+    """使用开源 OSRM 路由服务规划驾车路径"""
     # 注意 OSRM URL 顺序为: 经度,纬度
     url = (
         f"http://router.project-osrm.org/route/v1/driving/"
