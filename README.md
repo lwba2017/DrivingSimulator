@@ -1,5 +1,9 @@
 # DrivingSimulator - 沉浸式街景虚拟驾驶系统
 
+<p align="center">
+  <b>中文</b> | <a href="README_EN.md">English</a>
+</p>
+
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688.svg)](https://fastapi.tiangolo.com/)
 [![Three.js](https://img.shields.io/badge/Three.js-r128-black.svg)](https://threejs.org/)
