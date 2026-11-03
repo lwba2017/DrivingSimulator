@@ -1,0 +1,28 @@
+# 虚拟环境与 Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# 环境变量敏感配置 (请使用 .env.example 作为模板)
+.env
+
+# 街景图片、瓦片缓存及动态下载数据
+streetview_route/
+
+# 本地 SQLite 数据库
+*.db
+routes.db
+
+# 系统与临时文件
+.DS_Store
+Thumbs.db
+*.tmp
+0]
+新建文本文档.txt
+
+# IDE / 编辑器临时配置
+.vscode/
+.idea/

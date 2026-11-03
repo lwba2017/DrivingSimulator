@@ -1,0 +1,2457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>沉浸式街景虚拟驾驶系统 (Virtual Driving)</title>
+  
+  <!-- Leaflet 地图 CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #090d16;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+    }
+
+    /* 顶部导航模式切换 */
+    .top-nav {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 6px 12px;
+      border-radius: 30px;
+      display: flex;
+      gap: 8px;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+    .nav-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      padding: 6px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .nav-btn.active {
+      background: #0284c7;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(2, 132, 199, 0.6);
+    }
+
+    /* 地图规划视图 */
+    #map-view {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 10;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    .map-sidebar {
+      position: absolute;
+      top: 80px;
+      left: 20px;
+      width: 340px;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 20px;
+      z-index: 500;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    }
+    .map-sidebar h2 {
+      font-size: 17px;
+      color: #38bdf8;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .point-box {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .point-box.active {
+      border: 1px solid #38bdf8;
+    }
+    .point-title {
+      color: #94a3b8;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .point-val {
+      font-family: monospace;
+      color: #f1f5f9;
+      font-size: 13px;
+    }
+    .primary-btn {
+      width: 100%;
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 10px;
+    }
+    .primary-btn:hover { background: #0369a1; }
+    .primary-btn:disabled {
+      background: #334155;
+      color: #64748b;
+      cursor: not-allowed;
+    }
+
+    /* 下载进度条弹窗 */
+    .progress-box {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      display: none;
+    }
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: #1e293b;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #4ade80);
+      transition: width 0.3s;
+    }
+
+    /* 虚拟驾驶视图 (Three.js) */
+    #drive-view {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 5;
+      display: none;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 准星 */
+    .crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 16px;
+      height: 16px;
+      border: 1px dashed rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    /* 拍摄年份水印徽章 (左上角) */
+    .capture-date-badge {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 20;
+    }
+    .capture-date-badge b {
+      color: #38bdf8;
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    /* 真实感驾驶 HUD 仪表盘 */
+    .cockpit-hud {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10, 15, 29, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 20px;
+      padding: 16px 28px;
+      display: flex;
+      align-items: center;
+      gap: 30px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+      z-index: 20;
+    }
+    .speedo-meter {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .speed-number {
+      font-size: 46px;
+      font-weight: 800;
+      font-family: "Trebuchet MS", monospace;
+      color: #38bdf8;
+      text-shadow: 0 0 16px rgba(56, 189, 248, 0.5);
+      line-height: 1;
+    }
+    .speed-unit {
+      font-size: 11px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 2px;
+    }
+    .hud-divider {
+      width: 1px;
+      height: 50px;
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .hud-stats {
+      font-size: 13px;
+      line-height: 1.8;
+      min-width: 200px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+    }
+    .stat-label { color: #64748b; }
+    .stat-val { font-family: monospace; font-weight: 600; color: #f1f5f9; }
+
+    /* 驾驶控制说明浮层 */
+    .drive-tips {
+      position: absolute;
+      top: 80px;
+      right: 20px;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-size: 12px;
+      line-height: 1.8;
+      color: #cbd5e1;
+      z-index: 20;
+    }
+    .key-badge {
+      background: #1e293b;
+      border: 1px solid #475569;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 11px;
+      color: #38bdf8;
+      font-weight: bold;
+    }
+
+    /* 行驶到终点时弹出的 UI 对话框 */
+    .destination-modal {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(10, 15, 29, 0.75);
+      backdrop-filter: blur(12px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      animation: fadeInModal 0.3s ease;
+    }
+    @keyframes fadeInModal {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .destination-card {
+      background: #0f172a;
+      border: 1px solid #38bdf8;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8), 0 0 24px rgba(56, 189, 248, 0.3);
+      border-radius: 18px;
+      width: 440px;
+      padding: 28px 32px;
+      text-align: center;
+      color: #f8fafc;
+    }
+    .modal-quick-btn {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #e2e8f0;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .modal-quick-btn:hover {
+      background: #0284c7;
+      border-color: #38bdf8;
+      color: #fff;
+    }
+
+    /* 右下角缩略小地图 */
+    .minimap-container {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      width: 240px;
+      height: 240px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border: 2px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+      z-index: 25;
+      transition: all 0.3s ease;
+    }
+    .minimap-container:hover {
+      width: 320px;
+      height: 320px;
+      border-color: #38bdf8;
+    }
+    #minimap {
+      width: 100%;
+      height: 100%;
+    }
+    /* 车载导航当前位置箭头 */
+    .car-marker-icon {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.1s linear;
+    }
+    .car-arrow {
+      width: 0;
+      height: 0;
+      border-left: 9px solid transparent;
+      border-right: 9px solid transparent;
+      border-bottom: 22px solid #38bdf8;
+      filter: drop-shadow(0 0 6px #0284c7);
+    }
+
+    /* 自定义通用模态弹窗 */
+    .custom-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(10, 15, 29, 0.78);
+      backdrop-filter: blur(10px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeInModal 0.25s ease;
+    }
+    .custom-modal-card {
+      background: #0f172a;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 24px rgba(56, 189, 248, 0.2);
+      border-radius: 16px;
+      width: 90%;
+      color: #f8fafc;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .custom-modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .custom-modal-close {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .custom-modal-close:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .custom-modal-body {
+      padding: 16px 20px;
+      overflow-y: auto;
+    }
+    .custom-modal-footer {
+      padding: 12px 20px 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* 路线卡片样式 */
+    .route-item-card {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 12px 14px;
+      transition: all 0.2s ease;
+    }
+    .route-item-card:hover {
+      border-color: rgba(56, 189, 248, 0.5);
+      background: rgba(30, 41, 59, 0.9);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+    .route-meta-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #1e293b;
+      border: 1px solid #475569;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+      color: #cbd5e1;
+    }
+
+    /* 全局轻提示 Toast */
+    .app-toast {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: #0f172a;
+      border: 1px solid #38bdf8;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      color: #f8fafc;
+      padding: 10px 22px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 9999;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .app-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* 底图快速切换工具条 (位于地图顶部右侧) */
+    .basemap-switcher-bar {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 800;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 30px;
+      padding: 4px 6px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(56, 189, 248, 0.15);
+      user-select: none;
+    }
+    .basemap-switcher-label {
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 600;
+      padding: 0 6px 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .basemap-switch-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #94a3b8;
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      white-space: nowrap;
+    }
+    .basemap-switch-btn:hover {
+      color: #f8fafc;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .basemap-switch-btn.active {
+      color: #fff;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      border-color: #38bdf8;
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
+    }
+
+    /* Leaflet 原生图层切换器暗黑毛玻璃美化 */
+    .leaflet-control-layers {
+      background: rgba(15, 23, 42, 0.92) !important;
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.3) !important;
+      border-radius: 12px !important;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7) !important;
+      color: #f8fafc !important;
+      font-size: 12px !important;
+      padding: 10px 14px !important;
+    }
+    .leaflet-control-layers-toggle {
+      filter: invert(1) hue-rotate(180deg);
+    }
+    .leaflet-control-layers label {
+      color: #cbd5e1 !important;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .leaflet-control-layers label:hover {
+      color: #38bdf8 !important;
+    }
+  </style>
+
+  <!-- 依赖库 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <!-- 顶部视图切换 -->
+  <div class="top-nav">
+    <button id="nav-map" class="nav-btn active">🗺️ 地图规划与下载</button>
+    <button id="nav-drive" class="nav-btn">🚗 虚拟实景驾驶</button>
+  </div>
+
+  <!-- 1. 地图路线规划模式 -->
+  <div id="map-view">
+    <div id="map"></div>
+
+    <!-- 底图快速切换工具条 (支持 Google HD 卫星实拍混合、实拍+街景网、标准街景图等) -->
+    <div class="basemap-switcher-bar" id="basemap-switcher-bar">
+      <span class="basemap-switcher-label">🗺️ 底图图层:</span>
+      <button class="basemap-switch-btn active" data-layer-id="hybrid" title="Google HD 卫星实拍混合图 (卫星实拍影像 + 中文路网与地名)">
+        🛰️ Google HD实拍
+      </button>
+      <button class="basemap-switch-btn" data-layer-id="satellite_sv" title="Google HD 卫星实拍 + 街景蓝色覆盖线">
+        🔵 实拍+街景网
+      </button>
+      <button class="basemap-switch-btn" data-layer-id="street_sv" title="标准街道电子图 + 街景蓝色覆盖线">
+        🚗 街景覆盖图
+      </button>
+      <button class="basemap-switch-btn" data-layer-id="satellite" title="Google 纯高清实拍卫星图 (无文字道路注记)">
+        📷 纯卫星
+      </button>
+      <button class="basemap-switch-btn" data-layer-id="osm" title="OpenStreetMap 标准街道图">
+        🌐 OSM
+      </button>
+    </div>
+
+    <div class="map-sidebar">
+      <h2>路线规划</h2>
+      <p style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">
+        在地图上任意点击设定<b>起点</b>与<b>终点</b>，自动规划行车路线。
+      </p>
+
+      <div id="box-start" class="point-box active">
+        <div class="point-title">
+          <span>🟢 起点 (Start)</span>
+          <span id="txt-start-state" style="color: #38bdf8;">点击地图选取</span>
+        </div>
+        <div id="val-start" class="point-val" style="color: #94a3b8;">未设置（请在地图上点击）</div>
+      </div>
+
+      <div id="box-end" class="point-box">
+        <div class="point-title">
+          <span>🔴 终点 (Destination)</span>
+          <span id="txt-end-state">等待选取</span>
+        </div>
+        <div id="val-end" class="point-val" style="color: #94a3b8;">未设置</div>
+      </div>
+
+      <!-- 车道规划偏好设置 -->
+      <div class="point-box" style="margin-bottom: 8px;">
+        <div class="point-title">
+          <span>🚗 车道规划偏好</span>
+          <span id="val-lane-desc" style="color: #38bdf8; font-weight: bold;">直达/同向优先</span>
+        </div>
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <button id="btn-lane-direct" class="nav-btn active" style="flex: 1; padding: 5px 2px; font-size: 11px;">🧭 直达同向</button>
+          <button id="btn-lane-right" class="nav-btn" style="flex: 1; padding: 5px 2px; font-size: 11px;">➡️ 靠右车道</button>
+          <button id="btn-lane-left" class="nav-btn" style="flex: 1; padding: 5px 2px; font-size: 11px;">⬅️ 靠左车道</button>
+        </div>
+        <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+          * 起终点若落在路边或隔离带对侧，将自动纠正吸附至正向车道
+        </div>
+      </div>
+
+      <!-- 采样间距设置 -->
+      <div class="point-box" style="margin-bottom: 8px;">
+        <div class="point-title">
+          <span>📏 街景采样间距</span>
+          <span id="val-step-desc" style="color: #38bdf8; font-weight: bold;">20 米/张 (普通速度)</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+          <input type="range" id="input-step-slider" min="2" max="200" step="1" value="20" style="flex: 1; accent-color: #38bdf8; cursor: pointer;" />
+          <div style="display: flex; align-items: center; gap: 2px;">
+            <input type="number" id="input-step-meters" min="2" max="200" step="1" value="20" style="width: 54px; background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 4px; padding: 2px 4px; text-align: center; font-family: monospace;" />
+            <span style="font-size: 11px; color: #94a3b8;">米</span>
+          </div>
+        </div>
+        <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+          * 间距越小（如 4~8米）行驶越细腻连贯；间距越大下载耗时越短
+        </div>
+      </div>
+
+      <div style="font-size: 12px; line-height: 1.7; margin: 8px 0; color: #cbd5e1; background: rgba(30, 41, 59, 0.4); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.05);">
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: #94a3b8;">路线总长:</span>
+          <b id="val-dist" style="color: #4ade80;">--</b>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: #94a3b8;">预计采样点数:</span>
+          <b id="val-sampled-count" style="color: #cbd5e1;">--</b>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: #94a3b8;">预计下载全景:</span>
+          <b id="val-est-frames" style="color: #38bdf8;">等待选取起终点</b>
+        </div>
+      </div>
+
+      <!-- 路线保存与地址簿 -->
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <button id="btn-open-save-modal" class="primary-btn" style="flex: 1; background: #0f766e; margin-top: 0; margin-bottom: 0;">💾 保存当前路线</button>
+        <button id="btn-open-book-modal" class="primary-btn" style="flex: 1; background: #4338ca; margin-top: 0; margin-bottom: 0;">📖 路线地址簿</button>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+        <button id="btn-plan-route" class="primary-btn" style="flex: 1; background: #334155; margin-bottom: 0;">重新规划</button>
+        <button id="btn-reset-route" class="primary-btn" style="flex: 1; background: #7f1d1d; margin-bottom: 0;">🗑️ 重置路线</button>
+      </div>
+      <button id="btn-start-download" class="primary-btn">⚡ 下载该路线街景并开始驾驶</button>
+
+      <!-- 下载进度状态 -->
+      <div id="progress-box" class="progress-box">
+        <div style="display: flex; justify-content: space-between; font-size: 12px;">
+          <span id="txt-progress-step" style="color: #38bdf8;">准备下载...</span>
+          <span id="txt-progress-pct" style="font-family: monospace;">0%</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div id="progress-fill" class="progress-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 真实感平滑虚拟驾驶模式 -->
+  <div id="drive-view">
+    <div id="canvas-container"></div>
+    <div class="crosshair"></div>
+
+    <!-- 左上角街景拍摄年份徽章 -->
+    <div class="capture-date-badge">
+      <span>📅 街景采集时间:</span>
+      <b id="badge-capture-date">--</b>
+    </div>
+
+    <div class="drive-tips">
+      <div><b>驾驶操作</b></div>
+      <div><span class="key-badge">W</span> 或 <span class="key-badge">↑</span> 油门加速</div>
+      <div><span class="key-badge">S</span> 或 <span class="key-badge">↓</span> 刹车减速 / 倒车</div>
+      <div><span class="key-badge">U</span> 定速锁定 (保持松开时的车速)</div>
+      <div><span class="key-badge">空格</span> 自动巡航 / 暂停</div>
+      <div><span class="key-badge">B</span> 重新从起点驾驶 (重置位置)</div>
+      <div><span class="key-badge">[</span> / <span class="key-badge">]</span> 车头航向手动纠偏 (左/右偏调)</div>
+      <div><span class="key-badge">P</span> 复位车头航向纠偏 (0°)</div>
+      <div><span class="key-badge">鼠标拖动</span> 环视车窗全景视角</div>
+      <div><span class="key-badge">鼠标滚轮</span> 放大 / 缩小视野</div>
+      <div><span class="key-badge">R</span> 视角重置正前方并复位缩放</div>
+
+      <!-- 手动车头航向微调控制器 -->
+      <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <span style="color: #38bdf8; font-weight: bold;">🔧 车头航向纠偏:</span>
+          <span id="txt-heading-trim" style="font-family: monospace; font-weight: bold; color: #4ade80;">0.0°</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <button class="key-badge" style="cursor: pointer; padding: 2px 6px;" onclick="adjustHeadingTrim(-15)">-15°</button>
+          <input type="range" id="slider-heading-trim" min="-180" max="180" step="1" value="0" style="flex: 1; accent-color: #38bdf8; cursor: pointer;" oninput="setHeadingTrim(parseFloat(this.value))" />
+          <button class="key-badge" style="cursor: pointer; padding: 2px 6px;" onclick="adjustHeadingTrim(15)">+15°</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px;">
+          <span style="cursor: pointer; color: #94a3b8;" onclick="setHeadingTrim(0)">↺ 复位为 0°</span>
+          <span style="color: #64748b;">(对齐路面中心正前)</span>
+        </div>
+      </div>
+
+      <!-- 行车动态推进感调节 -->
+      <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <span style="color: #38bdf8; font-weight: bold;">🏎️ 行车推移感 (光流退景):</span>
+          <span id="txt-flow-strength" style="font-family: monospace; font-weight: bold; color: #4ade80;">中 (标准)</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <input type="range" id="slider-flow-strength" min="0" max="2.0" step="0.2" value="1.0" style="flex: 1; accent-color: #38bdf8; cursor: pointer;" oninput="setFlowStrength(parseFloat(this.value))" />
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; color: #64748b;">
+          <span>静止纯溶图 (0)</span>
+          <span>标准行车 (1.0)</span>
+          <span>强烈飞驰 (2.0)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部仪表盘 -->
+    <div class="cockpit-hud">
+      <div class="speedo-meter">
+        <span id="hud-speed" class="speed-number">0</span>
+        <span class="speed-unit">KM / H</span>
+      </div>
+
+      <div class="hud-divider"></div>
+
+      <div class="hud-stats">
+        <div class="stat-row">
+          <span class="stat-label">行驶里程:</span>
+          <span class="stat-val"><span id="hud-odometer">0.0</span> / <span id="hud-total-dist">0.0</span> m</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">街景位置:</span>
+          <span class="stat-val">帧 <span id="hud-frame-idx">0</span> (<span id="hud-interp-pct">0%</span>)</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">车辆航向:</span>
+          <span class="stat-val" id="hud-heading">0.0°</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">拍摄时间:</span>
+          <span class="stat-val" id="hud-date" style="color: #38bdf8;">--</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">动力状态:</span>
+          <span class="stat-val" id="hud-gear" style="color: #4ade80;">READY (P)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右下角缩略版车载导航地图 -->
+    <div class="minimap-container">
+      <div id="minimap"></div>
+    </div>
+
+    <!-- 行驶到终点时弹出的继续前行对话框 -->
+    <div id="destination-modal" class="destination-modal">
+      <div class="destination-card">
+        <div style="font-size: 36px; margin-bottom: 8px;">🏁</div>
+        <div style="font-size: 20px; font-weight: bold; margin-bottom: 6px; color: #38bdf8;">您已抵达当前路线终点！</div>
+        <div style="font-size: 13px; color: #94a3b8; margin-bottom: 20px;">
+          当前已行驶至设定终点。您可以设定沿前方道路继续前行，系统将自动检索并下载后续街景，无缝衔接继续行驶。
+        </div>
+
+        <div style="background: rgba(30, 41, 59, 0.6); padding: 16px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 20px;">
+          <div style="font-size: 13px; color: #cbd5e1; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <span>设定继续前行距离:</span>
+            <span style="font-family: monospace; font-size: 15px; font-weight: bold; color: #4ade80;"><span id="txt-modal-ext-km">2.0</span> km</span>
+          </div>
+
+          <div style="display: flex; gap: 8px; justify-content: center; margin-bottom: 14px;">
+            <button class="modal-quick-btn" onclick="setExtendDistance(1.0)">+1 km</button>
+            <button class="modal-quick-btn" onclick="setExtendDistance(2.0)">+2 km</button>
+            <button class="modal-quick-btn" onclick="setExtendDistance(5.0)">+5 km</button>
+            <button class="modal-quick-btn" onclick="setExtendDistance(10.0)">+10 km</button>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <input type="range" id="slider-modal-ext" min="0.5" max="30" step="0.5" value="2.0" style="flex: 1; accent-color: #38bdf8; cursor: pointer;" oninput="updateExtendKm(this.value)" />
+            <input type="number" id="input-modal-ext" min="0.2" max="50" step="0.5" value="2.0" style="width: 58px; background: #0f172a; border: 1px solid #475569; color: #fff; border-radius: 6px; padding: 4px; text-align: center; font-family: monospace;" onchange="updateExtendKm(this.value)" />
+            <span style="font-size: 12px; color: #94a3b8;">公里</span>
+          </div>
+        </div>
+
+        <!-- 延伸下载状态 -->
+        <div id="modal-download-box" style="display: none; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+            <span id="modal-download-step" style="color: #38bdf8;">准备下载...</span>
+            <span id="modal-download-pct" style="font-family: monospace; color: #fff;">0%</span>
+          </div>
+          <div class="progress-bar-bg" style="height: 6px;">
+            <div id="modal-download-fill" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px;">
+          <button id="btn-modal-cancel" class="primary-btn" style="flex: 1; background: #334155; margin-bottom: 0;" onclick="closeDestinationModal()">停留在此</button>
+          <button id="btn-modal-extend" class="primary-btn" style="flex: 2; margin-bottom: 0;" onclick="startExtendRoute()">⚡ 下载并继续前行</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 保存路线弹窗 -->
+  <div id="modal-save-route" class="custom-modal-overlay">
+    <div class="custom-modal-card" style="max-width: 480px;">
+      <div class="custom-modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 20px;">💾</span>
+          <span style="font-size: 16px; font-weight: bold; color: #f8fafc;">保存路线到地址簿</span>
+        </div>
+        <button class="custom-modal-close" onclick="closeSaveRouteModal()">✕</button>
+      </div>
+
+      <div class="custom-modal-body">
+        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 12px;">
+          路线将永久保存到本地 SQLite 数据库中，包含路线起终点、车道方向偏好和街景采样间距。
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="font-size: 13px; font-weight: 600; color: #cbd5e1;">路线名称</label>
+            <span id="save-geocode-status" style="font-size: 11px; color: #38bdf8;">🌍 正在解析地名...</span>
+          </div>
+          <input type="text" id="input-save-name" placeholder="请输入路线名称" style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 8px; padding: 9px 12px; font-size: 13px; outline: none;" />
+        </div>
+
+        <!-- 路线参数信息卡片 -->
+        <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 12px; line-height: 1.8;">
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: #94a3b8;">车道方向偏好:</span>
+            <span id="save-info-lane" style="color: #38bdf8; font-weight: bold;">--</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: #94a3b8;">街景采样间距:</span>
+            <span id="save-info-step" style="color: #4ade80; font-weight: bold;">--</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: #94a3b8;">规划路线里程:</span>
+            <span id="save-info-distance" style="color: #fbbf24; font-weight: bold;">--</span>
+          </div>
+          <div style="border-top: 1px dashed rgba(255, 255, 255, 0.1); margin: 6px 0; padding-top: 6px;">
+            <div style="color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              🟢 起点: <span id="save-info-start" style="color: #e2e8f0;">--</span>
+            </div>
+            <div style="color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              🔴 终点: <span id="save-info-end" style="color: #e2e8f0;">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 8px;">
+          <label style="display: block; font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">路线备注 (可选)</label>
+          <textarea id="input-save-notes" rows="2" placeholder="填写备注信息，例如：海滨观光公路、盘山急弯路段等..." style="width: 100%; box-sizing: border-box; background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 12px; outline: none; resize: vertical;"></textarea>
+        </div>
+      </div>
+
+      <div class="custom-modal-footer">
+        <button class="primary-btn" style="flex: 1; background: #334155; margin: 0;" onclick="closeSaveRouteModal()">取消</button>
+        <button id="btn-confirm-save-route" class="primary-btn" style="flex: 2; background: #0f766e; margin: 0;" onclick="submitSaveRoute()">💾 确认保存到数据库</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 路线地址簿弹窗 -->
+  <div id="modal-address-book" class="custom-modal-overlay">
+    <div class="custom-modal-card" style="max-width: 680px; width: 92%;">
+      <div class="custom-modal-header">
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 20px;">📖</span>
+            <span style="font-size: 16px; font-weight: bold; color: #f8fafc;">路线地址簿</span>
+            <span id="badge-routes-count" style="font-size: 11px; background: #1e293b; border: 1px solid #475569; border-radius: 12px; padding: 1px 8px; color: #38bdf8;">0 条路线</span>
+          </div>
+          <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">
+            已永久保存在 SQLite 数据库中，点击可立即将起终点及偏好参数加载至地图
+          </div>
+        </div>
+        <button class="custom-modal-close" onclick="closeAddressBookModal()">✕</button>
+      </div>
+
+      <div class="custom-modal-body" style="padding-top: 10px;">
+        <!-- 搜索栏 -->
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <input type="text" id="input-search-route" placeholder="🔍 快速搜索路线名称、城市、路名或备注..." style="flex: 1; background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none;" oninput="filterAddressBookList()" />
+          <button class="primary-btn" style="width: auto; padding: 0 14px; background: #334155; margin: 0; font-size: 12px;" onclick="loadAndRenderSavedRoutes()">🔄 刷新</button>
+        </div>
+
+        <!-- 路线列表滚动容器 -->
+        <div id="address-book-list" style="max-height: 420px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 10px;">
+          <!-- 动态渲染卡片 -->
+        </div>
+      </div>
+
+      <div class="custom-modal-footer" style="justify-content: flex-end;">
+        <button class="primary-btn" style="width: auto; padding: 8px 20px; background: #334155; margin: 0;" onclick="closeAddressBookModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 轻量 Toast 提示框 -->
+  <div id="app-toast" class="app-toast"></div>
+
+  <script>
+    /* ========================================================
+       1. 地图规划逻辑 (Leaflet)
+       ======================================================== */
+    let map, startMarker, endMarker, routePolyline;
+    let selectMode = 'start'; // 'start' or 'end'
+    let selectedLane = 'direct'; // 'direct' (直达同向), 'right' (靠右), 'left' (靠左)
+    let startCoord = null;
+    let endCoord = null;
+    let routePlanData = null;
+    let downloadPollTimer = null; // 轮询定时器句柄，重置路线时停止轮询并通知后端中断下载
+
+    // 底图图层定义与字典映射
+    let baseLayersMap = {};
+    let currentBaseLayerKey = localStorage.getItem('v_driving_basemap') || 'hybrid';
+    let currentActiveBaseLayer = null;
+
+    function initMap() {
+      // 默认展示城市视野，不预设任何行车路径
+      map = L.map('map', {
+        worldCopyJump: true // 开启跨越 180 度经线平滑跳转
+      }).setView([22.004, 120.744], 14);
+
+      // 图层 1: Google HD 实拍混合图 (卫星实拍 + 中文路网地名，超高清实拍推荐)
+      const layerGoogleHybrid = L.tileLayer('/api/tile/hybrid/{z}/{x}/{y}', {
+        maxZoom: 20,
+        attribution: 'Google HD Satellite Hybrid'
+      });
+
+      // 图层 2: Google HD 实拍 + 街景蓝色覆盖网 (卫星实拍底图 + 蓝色有街景道路高亮，选点最直观)
+      const layerGoogleSatSv = L.tileLayer('/api/tile/satellite_sv/{z}/{x}/{y}', {
+        maxZoom: 20,
+        attribution: 'Google HD Satellite + SV'
+      });
+
+      // 图层 3: Google 街景覆盖图 (标准道路网 + 街景蓝色高亮)
+      const layerStreetSv = L.tileLayer('/api/tile/street_sv/{z}/{x}/{y}', {
+        maxZoom: 19,
+        attribution: 'Google Street View Coverage'
+      });
+
+      // 图层 4: Google 纯高清实拍卫星图 (纯原生卫星影像，无道路文字注记)
+      const layerGoogleSatellite = L.tileLayer('/api/tile/satellite/{z}/{x}/{y}', {
+        maxZoom: 20,
+        attribution: 'Google HD Satellite Pure'
+      });
+
+      // 图层 5: OpenStreetMap 标准开源街道图
+      const layerOsm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      });
+
+      baseLayersMap = {
+        "hybrid": { name: "🛰️ Google HD 实拍混合图", layer: layerGoogleHybrid },
+        "satellite_sv": { name: "🔵 Google HD 实拍+街景网", layer: layerGoogleSatSv },
+        "street_sv": { name: "🚗 Google 街道+街景覆盖", layer: layerStreetSv },
+        "satellite": { name: "📷 Google 纯高清实拍卫星", layer: layerGoogleSatellite },
+        "osm": { name: "🌐 OpenStreetMap 标准街道", layer: layerOsm }
+      };
+
+      if (!baseLayersMap[currentBaseLayerKey]) {
+        currentBaseLayerKey = 'hybrid';
+      }
+      currentActiveBaseLayer = baseLayersMap[currentBaseLayerKey].layer;
+      currentActiveBaseLayer.addTo(map);
+
+      // 绑定底图快捷切换工具条事件
+      setupBaseMapSwitcher();
+
+      // 添加 Leaflet 原生图层切换器控件 (右上角收起模式，供更多需求使用)
+      const leafletLayersObj = {};
+      Object.keys(baseLayersMap).forEach(key => {
+        leafletLayersObj[baseLayersMap[key].name] = baseLayersMap[key].layer;
+      });
+      L.control.layers(leafletLayersObj, null, { position: 'topright', collapsed: true }).addTo(map);
+
+      // 监听图层控件切换，双向同步按钮高亮
+      map.on('baselayerchange', (e) => {
+        const foundKey = Object.keys(baseLayersMap).find(k => baseLayersMap[k].layer === e.layer);
+        if (foundKey && foundKey !== currentBaseLayerKey) {
+          currentBaseLayerKey = foundKey;
+          localStorage.setItem('v_driving_basemap', foundKey);
+          updateBaseMapButtonsUI(foundKey);
+        }
+      });
+
+      map.on('click', (e) => {
+        // 对点击经度进行标准范围规范化 (-180 ~ 180)
+        const lat = e.latlng.lat;
+        const lng = ((e.latlng.lng + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+
+        if (selectMode === 'start') {
+          startCoord = [lat, lng];
+          if (!startMarker) {
+            startMarker = L.marker([lat, lng], { draggable: true }).addTo(map).bindPopup("🟢 路线起点");
+            startMarker.on('dragend', () => {
+              const p = startMarker.getLatLng();
+              const pLng = ((p.lng + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+              startCoord = [p.lat, pLng];
+              updateCoordUI();
+              if (startCoord && endCoord) requestPlan();
+            });
+          } else {
+            startMarker.setLatLng([lat, lng]);
+          }
+          selectMode = 'end';
+          document.getElementById('box-start').classList.remove('active');
+          document.getElementById('box-end').classList.add('active');
+          document.getElementById('txt-start-state').innerText = "已设定";
+          document.getElementById('txt-end-state').innerText = "点击地图选取终点";
+        } else {
+          endCoord = [lat, lng];
+          if (!endMarker) {
+            endMarker = L.marker([lat, lng], { draggable: true }).addTo(map).bindPopup("🔴 路线终点");
+            endMarker.on('dragend', () => {
+              const p = endMarker.getLatLng();
+              const pLng = ((p.lng + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+              endCoord = [p.lat, pLng];
+              updateCoordUI();
+              if (startCoord && endCoord) requestPlan();
+            });
+          } else {
+            endMarker.setLatLng([lat, lng]);
+          }
+          selectMode = 'start';
+          document.getElementById('box-end').classList.remove('active');
+          document.getElementById('box-start').classList.add('active');
+          document.getElementById('txt-end-state').innerText = "已设定";
+          document.getElementById('txt-start-state').innerText = "可点击修改起点";
+        }
+        updateCoordUI();
+        if (startCoord && endCoord) {
+          requestPlan();
+        }
+      });
+
+      document.getElementById('box-start').onclick = () => {
+        selectMode = 'start';
+        document.getElementById('box-end').classList.remove('active');
+        document.getElementById('box-start').classList.add('active');
+      };
+      document.getElementById('box-end').onclick = () => {
+        selectMode = 'end';
+        document.getElementById('box-start').classList.remove('active');
+        document.getElementById('box-end').classList.add('active');
+      };
+
+      document.getElementById('btn-plan-route').onclick = () => {
+        if (startCoord && endCoord) requestPlan();
+        else alert("请先在地图上点击选取起点与终点！");
+      };
+      document.getElementById('btn-reset-route').onclick = resetRoutePoints;
+      document.getElementById('btn-start-download').onclick = startDownloadRoute;
+
+      // 绑定路线保存与地址簿事件
+      document.getElementById('btn-open-save-modal').onclick = openSaveRouteModal;
+      document.getElementById('btn-open-book-modal').onclick = openAddressBookModal;
+
+      setupLaneEvents();
+      setupStepInputEvents();
+      updateCoordUI();
+
+      // ESC 键快捷关闭模态框
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeSaveRouteModal();
+          closeAddressBookModal();
+        }
+      });
+    }
+
+    function setupBaseMapSwitcher() {
+      updateBaseMapButtonsUI(currentBaseLayerKey);
+
+      document.querySelectorAll('.basemap-switch-btn').forEach(btn => {
+        btn.onclick = () => {
+          const targetKey = btn.dataset.layerId;
+          if (!targetKey) return;
+          switchBaseLayer(targetKey);
+        };
+      });
+    }
+
+    function switchBaseLayer(layerKey) {
+      if (!baseLayersMap[layerKey]) return;
+      if (currentActiveBaseLayer && map.hasLayer(currentActiveBaseLayer)) {
+        map.removeLayer(currentActiveBaseLayer);
+      }
+      currentActiveBaseLayer = baseLayersMap[layerKey].layer;
+      currentActiveBaseLayer.addTo(map);
+      currentBaseLayerKey = layerKey;
+      localStorage.setItem('v_driving_basemap', layerKey);
+
+      updateBaseMapButtonsUI(layerKey);
+      showToast(`已切换底图: ${baseLayersMap[layerKey].name}`);
+    }
+
+    function updateBaseMapButtonsUI(activeKey) {
+      document.querySelectorAll('.basemap-switch-btn').forEach(btn => {
+        if (btn.dataset.layerId === activeKey) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    }
+
+    function setLane(mode, label, triggerPlan = true) {
+      selectedLane = mode;
+      const btnDirect = document.getElementById('btn-lane-direct');
+      const btnRight = document.getElementById('btn-lane-right');
+      const btnLeft = document.getElementById('btn-lane-left');
+      const desc = document.getElementById('val-lane-desc');
+      if (btnDirect && btnRight && btnLeft) {
+        [btnDirect, btnRight, btnLeft].forEach(b => b.classList.remove('active'));
+        if (mode === 'direct') btnDirect.classList.add('active');
+        else if (mode === 'right') btnRight.classList.add('active');
+        else if (mode === 'left') btnLeft.classList.add('active');
+      }
+      if (!label) {
+        if (mode === 'direct') label = '直达/同向优先';
+        else if (mode === 'right') label = '靠右车道行驶';
+        else if (mode === 'left') label = '靠左车道行驶';
+      }
+      if (desc) desc.innerText = label;
+      if (triggerPlan && startCoord && endCoord) requestPlan();
+    }
+
+    function setupLaneEvents() {
+      const btnDirect = document.getElementById('btn-lane-direct');
+      const btnRight = document.getElementById('btn-lane-right');
+      const btnLeft = document.getElementById('btn-lane-left');
+
+      if (btnDirect) btnDirect.onclick = () => setLane('direct', '直达/同向优先');
+      if (btnRight) btnRight.onclick = () => setLane('right', '靠右车道行驶');
+      if (btnLeft) btnLeft.onclick = () => setLane('left', '靠左车道行驶');
+    }
+
+    function resetRoutePoints() {
+      // 1. 如果当前正在下载，立即停止下载与轮询
+      if (downloadPollTimer) {
+        clearInterval(downloadPollTimer);
+        downloadPollTimer = null;
+      }
+      fetch('/api/stop_download', { method: 'POST' }).catch(() => {});
+
+      const btnDownload = document.getElementById('btn-start-download');
+      if (btnDownload) btnDownload.disabled = false;
+      const progressBox = document.getElementById('progress-box');
+      if (progressBox) progressBox.style.display = 'none';
+      const progressFill = document.getElementById('progress-fill');
+      if (progressFill) progressFill.style.width = '0%';
+      const progressPct = document.getElementById('txt-progress-pct');
+      if (progressPct) progressPct.innerText = '0%';
+
+      // 2. 移除地图标记与规划折线
+      if (startMarker) {
+        map.removeLayer(startMarker);
+        startMarker = null;
+      }
+      if (endMarker) {
+        map.removeLayer(endMarker);
+        endMarker = null;
+      }
+      if (routePolyline) {
+        map.removeLayer(routePolyline);
+        routePolyline = null;
+      }
+
+      // 状态重置
+      startCoord = null;
+      endCoord = null;
+      selectMode = 'start';
+      routePlanData = null;
+
+      // UI 状态卡片恢复
+      document.getElementById('box-start').classList.add('active');
+      document.getElementById('box-end').classList.remove('active');
+      document.getElementById('txt-start-state').innerText = "点击地图选取起点";
+      document.getElementById('txt-end-state').innerText = "等待选取";
+
+      document.getElementById('val-dist').innerText = "--";
+      document.getElementById('val-sampled-count').innerText = "--";
+      document.getElementById('val-est-frames').innerText = "等待选取起终点";
+
+      updateCoordUI();
+    }
+
+    function getSelectedStepMeters() {
+      const val = parseFloat(document.getElementById('input-step-meters').value);
+      return (val && val >= 2) ? val : 20.0;
+    }
+
+    function setStepMeters(val, triggerPlan = true) {
+      val = parseFloat(val);
+      if (isNaN(val) || val < 2) val = 2;
+      if (val > 200) val = 200;
+      const slider = document.getElementById('input-step-slider');
+      const numberInput = document.getElementById('input-step-meters');
+      const desc = document.getElementById('val-step-desc');
+      if (slider) slider.value = val;
+      if (numberInput) numberInput.value = val;
+      let hint = "";
+      if (val <= 4) hint = " (超高精连贯)";
+      else if (val <= 8) hint = " (推荐/均衡)";
+      else if (val <= 20) hint = " (普通速度)";
+      else if (val <= 60) hint = " (快速轻量)";
+      else hint = " (长途跳跃观光)";
+      if (desc) desc.innerText = `${val} 米/张${hint}`;
+      if (triggerPlan && startCoord && endCoord) requestPlan();
+    }
+
+    function setupStepInputEvents() {
+      const slider = document.getElementById('input-step-slider');
+      const numberInput = document.getElementById('input-step-meters');
+
+      slider.addEventListener('input', (e) => setStepMeters(e.target.value, true));
+      numberInput.addEventListener('change', (e) => setStepMeters(e.target.value, true));
+    }
+
+    /* ========================================================
+       1.1 路线保存与地址簿 (SQLite 持久化与逆地理编码)
+       ======================================================== */
+    let toastTimer = null;
+    function showToast(msg, duration = 3200) {
+      const el = document.getElementById('app-toast');
+      if (!el) return;
+      el.innerText = msg;
+      el.classList.add('show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        el.classList.remove('show');
+      }, duration);
+    }
+
+    let currentStartAddr = null;
+    let currentEndAddr = null;
+
+    async function openSaveRouteModal() {
+      if (!startCoord || !endCoord) {
+        showToast("⚠️ 请先在地图上设定起点和终点！");
+        return;
+      }
+
+      const modal = document.getElementById('modal-save-route');
+      const nameInput = document.getElementById('input-save-name');
+      const notesInput = document.getElementById('input-save-notes');
+      const statusEl = document.getElementById('save-geocode-status');
+
+      // 重置输入与状态
+      nameInput.value = "";
+      notesInput.value = "";
+      statusEl.innerText = "🌍 正在解析当前地名...";
+      statusEl.style.color = "#38bdf8";
+
+      // 填充当前参数卡片
+      let laneLabel = "直达/同向优先";
+      if (selectedLane === 'right') laneLabel = "靠右车道行驶";
+      else if (selectedLane === 'left') laneLabel = "靠左车道行驶";
+      document.getElementById('save-info-lane').innerText = laneLabel;
+
+      const stepMeters = getSelectedStepMeters();
+      document.getElementById('save-info-step').innerText = `${stepMeters} 米/张`;
+
+      const distText = document.getElementById('val-dist').innerText;
+      document.getElementById('save-info-distance').innerText = distText !== '--' ? distText : '计算中...';
+
+      document.getElementById('save-info-start').innerText = `${startCoord[0].toFixed(5)}, ${startCoord[1].toFixed(5)}`;
+      document.getElementById('save-info-end').innerText = `${endCoord[0].toFixed(5)}, ${endCoord[1].toFixed(5)}`;
+
+      modal.style.display = "flex";
+
+      // 异步并发发起逆地理编码请求
+      try {
+        const [startRes, endRes] = await Promise.allSettled([
+          fetch(`/api/reverse_geocode?lat=${startCoord[0]}&lon=${startCoord[1]}`).then(r => r.json()),
+          fetch(`/api/reverse_geocode?lat=${endCoord[0]}&lon=${endCoord[1]}`).then(r => r.json())
+        ]);
+
+        const sData = startRes.status === 'fulfilled' && startRes.value.success ? startRes.value : null;
+        const eData = endRes.status === 'fulfilled' && endRes.value.success ? endRes.value : null;
+
+        currentStartAddr = sData;
+        currentEndAddr = eData;
+
+        if (sData) {
+          document.getElementById('save-info-start').innerText = `${sData.short_name} (${startCoord[0].toFixed(4)}, ${startCoord[1].toFixed(4)})`;
+        }
+        if (eData) {
+          document.getElementById('save-info-end').innerText = `${eData.short_name} (${endCoord[0].toFixed(4)}, ${endCoord[1].toFixed(4)})`;
+        }
+
+        // 默认自动组合简短地名名称: 国家, 城市, 路名
+        let autoName = "";
+        if (sData) {
+          const region = sData.city || sData.country || "";
+          const sRoad = sData.road || "";
+          const eRoad = (eData && eData.road && eData.road !== sRoad) ? eData.road : "";
+
+          if (sRoad && eRoad) {
+            autoName = (region ? `[${region}] ` : "") + `${sRoad} → ${eRoad}`;
+          } else if (sRoad) {
+            autoName = (region ? `[${region}] ` : "") + sRoad;
+          } else {
+            autoName = sData.short_name;
+          }
+        } else if (eData) {
+          autoName = eData.short_name;
+        } else {
+          autoName = `路线 (${startCoord[0].toFixed(4)}, ${startCoord[1].toFixed(4)})`;
+        }
+
+        if (autoName && !nameInput.value) {
+          nameInput.value = autoName;
+          statusEl.innerText = "✓ 已自动填入当前地名 (可修改)";
+          statusEl.style.color = "#4ade80";
+        }
+      } catch (err) {
+        statusEl.innerText = "ℹ️ 地名解析超时，可手动输入名称";
+        statusEl.style.color = "#94a3b8";
+        if (!nameInput.value) {
+          nameInput.value = `路线规划 (${startCoord[0].toFixed(4)}, ${startCoord[1].toFixed(4)})`;
+        }
+      }
+    }
+
+    function closeSaveRouteModal() {
+      const modal = document.getElementById('modal-save-route');
+      if (modal) modal.style.display = "none";
+    }
+
+    async function submitSaveRoute() {
+      const nameInput = document.getElementById('input-save-name');
+      const notesInput = document.getElementById('input-save-notes');
+      const btnConfirm = document.getElementById('btn-confirm-save-route');
+
+      const name = nameInput.value.trim();
+      if (!name) {
+        showToast("⚠️ 请输入路线名称！");
+        nameInput.focus();
+        return;
+      }
+
+      btnConfirm.disabled = true;
+      btnConfirm.innerText = "⏳ 正在保存到数据库...";
+
+      try {
+        const payload = {
+          name: name,
+          notes: notesInput.value.trim(),
+          start_lat: startCoord[0],
+          start_lon: startCoord[1],
+          end_lat: endCoord[0],
+          end_lon: endCoord[1],
+          start_address: currentStartAddr ? currentStartAddr.short_name : "",
+          end_address: currentEndAddr ? currentEndAddr.short_name : "",
+          lane_preference: selectedLane,
+          step_meters: getSelectedStepMeters(),
+          distance: routePlanData ? routePlanData.distance : 0.0,
+          duration: routePlanData ? routePlanData.duration : 0.0
+        };
+
+        const resp = await fetch('/api/routes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          let detail = "";
+          try {
+            const errObj = JSON.parse(text);
+            detail = errObj.detail || errObj.error || errObj.message || text;
+          } catch(e) {
+            detail = text;
+          }
+          alert(`保存失败 (HTTP ${resp.status}): ${detail}\n\n提示: 若刚刚更新代码，请先在终端重启后端服务 (python server.py)`);
+          return;
+        }
+        const res = await resp.json();
+
+        if (res.success) {
+          closeSaveRouteModal();
+          showToast(`💾 路线【${name}】已成功永久保存到数据库！`);
+        } else {
+          alert("保存失败: " + (res.error || res.detail || "未知错误"));
+        }
+      } catch (e) {
+        alert("网络或服务异常: " + e.message);
+      } finally {
+        btnConfirm.disabled = false;
+        btnConfirm.innerText = "💾 确认保存到数据库";
+      }
+    }
+
+    let cachedSavedRoutes = [];
+
+    async function openAddressBookModal() {
+      document.getElementById('modal-address-book').style.display = "flex";
+      document.getElementById('input-search-route').value = "";
+      await loadAndRenderSavedRoutes();
+    }
+
+    function closeAddressBookModal() {
+      const modal = document.getElementById('modal-address-book');
+      if (modal) modal.style.display = "none";
+    }
+
+    async function loadAndRenderSavedRoutes() {
+      const listEl = document.getElementById('address-book-list');
+      const countEl = document.getElementById('badge-routes-count');
+      listEl.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 30px;">⏳ 正在读取已保存的路线...</div>`;
+
+      try {
+        const resp = await fetch('/api/routes');
+        if (!resp.ok) {
+          listEl.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 20px;">服务响应异常 (HTTP ${resp.status})，请先重启后端服务 (python server.py)</div>`;
+          return;
+        }
+        const data = await resp.json();
+        if (!data.success) {
+          listEl.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 20px;">加载失败: ${data.error || data.detail || '未知错误'}</div>`;
+          return;
+        }
+
+        cachedSavedRoutes = data.routes || [];
+        countEl.innerText = `${cachedSavedRoutes.length} 条路线`;
+        renderRouteList(cachedSavedRoutes);
+      } catch (e) {
+        listEl.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 20px;">请求异常: ${e.message}</div>`;
+      }
+    }
+
+    function filterAddressBookList() {
+      const query = document.getElementById('input-search-route').value.trim().toLowerCase();
+      if (!query) {
+        renderRouteList(cachedSavedRoutes);
+        return;
+      }
+      const filtered = cachedSavedRoutes.filter(r => {
+        const str = `${r.name} ${r.notes || ''} ${r.start_address || ''} ${r.end_address || ''}`.toLowerCase();
+        return str.includes(query);
+      });
+      renderRouteList(filtered);
+    }
+
+    function renderRouteList(routes) {
+      const listEl = document.getElementById('address-book-list');
+      if (!routes || routes.length === 0) {
+        listEl.innerHTML = `
+          <div style="text-align: center; padding: 40px 20px; color: #94a3b8;">
+            <div style="font-size: 32px; margin-bottom: 8px;">📭</div>
+            <div style="font-size: 14px; font-weight: 500; color: #cbd5e1;">暂无保存路线</div>
+            <div style="font-size: 12px; margin-top: 4px;">在地图上设定起点和终点后，点击【保存当前路线】即可永久收录至此。</div>
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = routes.map(item => {
+        let laneBadgeText = "🧭 直达同向";
+        if (item.lane_preference === 'right') laneBadgeText = "➡️ 靠右车道";
+        else if (item.lane_preference === 'left') laneBadgeText = "⬅️ 靠左车道";
+
+        const distKm = item.distance ? (item.distance / 1000).toFixed(2) + ' km' : '--';
+
+        return `
+          <div class="route-item-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+              <div style="font-size: 14px; font-weight: 700; color: #f8fafc; line-height: 1.4;">
+                ${escapeHtml(item.name)}
+              </div>
+              <span style="font-size: 11px; color: #64748b; font-family: monospace; white-space: nowrap;">
+                ${escapeHtml(item.created_at || '')}
+              </span>
+            </div>
+
+            <!-- 参数徽章标签 -->
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;">
+              <span class="route-meta-badge" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
+                ${laneBadgeText}
+              </span>
+              <span class="route-meta-badge" style="color: #4ade80; border-color: rgba(74, 222, 128, 0.4);">
+                📏 ${item.step_meters} 米/张
+              </span>
+              <span class="route-meta-badge" style="color: #fbbf24; border-color: rgba(251, 191, 36, 0.4);">
+                🚗 ${distKm}
+              </span>
+            </div>
+
+            <!-- 地点经纬度详情 -->
+            <div style="font-size: 11px; color: #94a3b8; line-height: 1.6; margin-bottom: 6px;">
+              <div>🟢 <b>起点:</b> ${escapeHtml(item.start_address || `${item.start_lat.toFixed(4)}, ${item.start_lon.toFixed(4)}`)}</div>
+              <div>🔴 <b>终点:</b> ${escapeHtml(item.end_address || `${item.end_lat.toFixed(4)}, ${item.end_lon.toFixed(4)}`)}</div>
+            </div>
+
+            ${item.notes ? `
+              <div style="background: rgba(15, 23, 42, 0.5); border-left: 2px solid #38bdf8; padding: 4px 8px; font-size: 11px; color: #cbd5e1; border-radius: 0 4px 4px 0; margin-bottom: 8px;">
+                📝 ${escapeHtml(item.notes)}
+              </div>
+            ` : ''}
+
+            <!-- 底部操作按钮 -->
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+              <button class="primary-btn" style="width: auto; padding: 5px 12px; font-size: 12px; background: #b91c1c; margin: 0;" onclick="deleteSavedRoute(${item.id}, '${escapeHtml(item.name).replace(/'/g, "\\'")}')">🗑️ 删除</button>
+              <button class="primary-btn" style="width: auto; padding: 5px 16px; font-size: 12px; background: #0284c7; margin: 0;" onclick="applySavedRoute(${item.id})">🚀 加载此路线</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function deleteSavedRoute(id, name) {
+      if (!confirm(`确定要从数据库中删除路线【${name}】吗？删除后不可撤销。`)) return;
+
+      try {
+        const resp = await fetch(`/api/routes/${id}`, { method: 'DELETE' });
+        const res = await resp.json();
+        if (res.success) {
+          showToast(`已删除路线【${name}】`);
+          await loadAndRenderSavedRoutes();
+        } else {
+          alert("删除失败: " + res.error);
+        }
+      } catch (e) {
+        alert("操作失败: " + e.message);
+      }
+    }
+
+    async function applySavedRoute(id) {
+      const item = cachedSavedRoutes.find(r => r.id === id);
+      if (!item) return;
+
+      // 1. 设置起点与终点坐标
+      startCoord = [item.start_lat, item.start_lon];
+      endCoord = [item.end_lat, item.end_lon];
+
+      // 2. 更新或创建地图标记
+      if (startMarker) {
+        startMarker.setLatLng(startCoord);
+      } else {
+        startMarker = L.marker(startCoord, { draggable: true }).addTo(map).bindPopup("🟢 路线起点");
+        startMarker.on('dragend', () => {
+          const p = startMarker.getLatLng();
+          const pLng = ((p.lng + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+          startCoord = [p.lat, pLng];
+          updateCoordUI();
+          if (startCoord && endCoord) requestPlan();
+        });
+      }
+
+      if (endMarker) {
+        endMarker.setLatLng(endCoord);
+      } else {
+        endMarker = L.marker(endCoord, { draggable: true }).addTo(map).bindPopup("🔴 路线终点");
+        endMarker.on('dragend', () => {
+          const p = endMarker.getLatLng();
+          const pLng = ((p.lng + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+          endCoord = [p.lat, pLng];
+          updateCoordUI();
+          if (startCoord && endCoord) requestPlan();
+        });
+      }
+
+      // 3. 恢复方向偏好和采样间距
+      setLane(item.lane_preference || 'direct', null, false);
+      setStepMeters(item.step_meters || 20.0, false);
+
+      // 4. 更新左侧选点卡片状态
+      document.getElementById('box-start').classList.remove('active');
+      document.getElementById('box-end').classList.remove('active');
+      document.getElementById('txt-start-state').innerText = "已加载";
+      document.getElementById('txt-end-state').innerText = "已加载";
+      updateCoordUI();
+
+      // 5. 立即重新计算规划
+      await requestPlan();
+
+      // 6. 地图视野聚焦到该路线
+      if (map) {
+        map.fitBounds([startCoord, endCoord], { padding: [60, 60], maxZoom: 16 });
+      }
+
+      // 7. 关闭地址簿弹窗
+      closeAddressBookModal();
+      showToast(`🚀 已成功加载路线：【${item.name}】！`);
+    }
+
+    function updateCoordUI() {
+      const valStart = document.getElementById('val-start');
+      const valEnd = document.getElementById('val-end');
+      if (startCoord) {
+        valStart.innerText = `${startCoord[0].toFixed(5)}, ${startCoord[1].toFixed(5)}`;
+        valStart.style.color = '#fff';
+      } else {
+        valStart.innerText = '未设置（请在地图上点击）';
+        valStart.style.color = '#94a3b8';
+      }
+
+      if (endCoord) {
+        valEnd.innerText = `${endCoord[0].toFixed(5)}, ${endCoord[1].toFixed(5)}`;
+        valEnd.style.color = '#fff';
+      } else {
+        valEnd.innerText = '未设置';
+        valEnd.style.color = '#94a3b8';
+      }
+    }
+
+    async function requestPlan() {
+      if (!startCoord || !endCoord) return;
+      const stepMeters = getSelectedStepMeters();
+      try {
+        const resp = await fetch('/api/plan_route', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            start_lat: startCoord[0],
+            start_lon: startCoord[1],
+            end_lat: endCoord[0],
+            end_lon: endCoord[1],
+            lane_preference: selectedLane,
+            step_meters: stepMeters
+          })
+        });
+        const data = await resp.json();
+        if (!data.success) {
+          alert("规划失败: " + data.error);
+          return;
+        }
+        routePlanData = data;
+        document.getElementById('val-dist').innerText = (data.distance / 1000).toFixed(2) + " km";
+        document.getElementById('val-sampled-count').innerText = `${data.sampled_count} 个位置点 (按每 ${stepMeters} 米)`;
+        document.getElementById('val-est-frames').innerText = `约 ${data.estimated_panos} 张图片 (自动去重)`;
+
+        // 自动纠正：将落在路边或错误车道的点位自动纠偏吸附至实际车道中线上
+        if (data.snapped_start && startMarker) {
+          startCoord = [data.snapped_start[0], data.snapped_start[1]];
+          startMarker.setLatLng(startCoord);
+        }
+        if (data.snapped_end && endMarker) {
+          endCoord = [data.snapped_end[0], data.snapped_end[1]];
+          endMarker.setLatLng(endCoord);
+        }
+        updateCoordUI();
+
+        if (routePolyline) map.removeLayer(routePolyline);
+        routePolyline = L.polyline(data.coordinates, { color: '#0284c7', weight: 5, opacity: 0.85 }).addTo(map);
+        map.fitBounds(routePolyline.getBounds(), { padding: [50, 50] });
+      } catch (e) {
+        console.error("请求规划失败", e);
+      }
+    }
+
+    async function startDownloadRoute() {
+      if (!startCoord || !endCoord) {
+        alert("请先在地图上点击选取起点与终点！");
+        return;
+      }
+      const stepMeters = getSelectedStepMeters();
+      const btn = document.getElementById('btn-start-download');
+      btn.disabled = true;
+      document.getElementById('progress-box').style.display = 'block';
+
+      try {
+        const resp = await fetch('/api/start_download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            start_lat: startCoord[0],
+            start_lon: startCoord[1],
+            end_lat: endCoord[0],
+            end_lon: endCoord[1],
+            lane_preference: selectedLane,
+            step_meters: stepMeters,
+            zoom_level: 3
+          })
+        });
+        const res = await resp.json();
+        if (!res.success) {
+          alert(res.message);
+          btn.disabled = false;
+          return;
+        }
+
+        // 轮询下载进度
+        downloadPollTimer = setInterval(async () => {
+          const sResp = await fetch('/api/download_status');
+          const status = await sResp.json();
+
+          document.getElementById('txt-progress-step').innerText = status.current_step;
+          if (status.total > 0) {
+            const pct = Math.min(100, Math.round((status.progress / status.total) * 100));
+            document.getElementById('progress-fill').style.width = pct + '%';
+            document.getElementById('txt-progress-pct').innerText = pct + '%';
+          }
+
+          if (status.status === 'completed') {
+            clearInterval(downloadPollTimer);
+            downloadPollTimer = null;
+            btn.disabled = false;
+            document.getElementById('txt-progress-step').innerText = "下载完成，正在进入虚拟驾驶舱...";
+            setTimeout(() => {
+              switchView('drive');
+              initDriveEngine();
+            }, 1000);
+          } else if (status.status === 'cancelled') {
+            clearInterval(downloadPollTimer);
+            downloadPollTimer = null;
+            btn.disabled = false;
+            document.getElementById('progress-box').style.display = 'none';
+          } else if (status.status === 'error') {
+            clearInterval(downloadPollTimer);
+            downloadPollTimer = null;
+            btn.disabled = false;
+            alert("下载失败: " + status.error_message);
+          }
+        }, 1000);
+
+      } catch (e) {
+        btn.disabled = false;
+        alert("启动下载异常: " + e.message);
+      }
+    }
+
+
+    /* ========================================================
+       2. Three.js 连续平滑虚拟驾驶渲染引擎 (Dollying + Fade)
+       ======================================================== */
+    let driveEngineInitialized = false;
+    let driveManifest = null;
+    let scene, camera, renderer;
+    let sphereA, sphereB; // 双全景球，实现无缝推进 Cross-fade
+    let textureLoader = new THREE.TextureLoader();
+    let texCache = new Map();
+
+    // 右下角车载缩略小地图
+    let minimap = null;
+    let minimapCarMarker = null;
+    let minimapRouteLine = null;
+
+    // 物理驾驶模型
+    let currentDistance = 0.0;     // 沿路线行驶的当前实际米数里程
+    let totalRouteDistance = 0.0;
+    let speedMps = 0.0;            // 当前车速 (米/秒)
+    const MAX_SPEED_MPS = 200 / 3.6; // 最大车速提升至 200 km/h (约 55.56 m/s)
+    const ACCEL = 14.0;            // 加速度 (m/s^2)，提供充沛推背感
+    const BRAKE = 22.0;            // 制动力 (m/s^2)，适应 200km/h 紧急制动
+    const FRICTION = 4.5;          // 自然阻力 (m/s^2)
+
+    // 控制状态
+    const keys = { w: false, s: false, space: false };
+    let cruiseMode = false;
+    let speedLockMode = false;     // 定速锁定模式 (U 键触发)
+    let lockedSpeedMps = 0.0;      // 锁定时设定的目标车速 (m/s)
+    let headingTrimDeg = 0.0;      // 车头航向手动纠偏角度 (度)，正为右偏，负为左偏
+
+    function setHeadingTrim(val) {
+      headingTrimDeg = THREE.MathUtils.clamp(val, -180, 180);
+      const slider = document.getElementById('slider-heading-trim');
+      if (slider) slider.value = headingTrimDeg;
+      const txt = document.getElementById('txt-heading-trim');
+      if (txt) {
+        const sign = headingTrimDeg > 0 ? "+" : "";
+        txt.innerText = `${sign}${headingTrimDeg.toFixed(1)}°`;
+      }
+    }
+
+    function adjustHeadingTrim(delta) {
+      setHeadingTrim(headingTrimDeg + delta);
+    }
+
+    // 行车动态推进流光感 (两侧景物向后退去) 强度系数
+    let flowStrength = 1.0;
+    function setFlowStrength(val) {
+      flowStrength = THREE.MathUtils.clamp(val, 0, 2.0);
+      const slider = document.getElementById('slider-flow-strength');
+      if (slider) slider.value = flowStrength;
+      const txt = document.getElementById('txt-flow-strength');
+      if (txt) {
+        if (flowStrength === 0) txt.innerText = "关闭 (静止)";
+        else if (flowStrength <= 0.6) txt.innerText = "微弱";
+        else if (flowStrength <= 1.2) txt.innerText = "中 (标准)";
+        else txt.innerText = "强烈";
+      }
+    }
+
+    // 观察视角控制 (鼠标环视)
+    let lookLon = 0, lookLat = 0;
+    let isMouseDown = false, mouseX = 0, mouseY = 0;
+
+    function switchView(view) {
+      if (view === 'map') {
+        document.getElementById('map-view').style.display = 'block';
+        document.getElementById('drive-view').style.display = 'none';
+        document.getElementById('nav-map').classList.add('active');
+        document.getElementById('nav-drive').classList.remove('active');
+        cruiseMode = false;
+        speedLockMode = false;
+        speedMps = 0;
+      } else {
+        document.getElementById('map-view').style.display = 'none';
+        document.getElementById('drive-view').style.display = 'block';
+        document.getElementById('nav-drive').classList.add('active');
+        document.getElementById('nav-map').classList.remove('active');
+        if (minimap) {
+          setTimeout(() => minimap.invalidateSize(), 200);
+        }
+      }
+    }
+
+    function initMinimap(frames) {
+      if (!minimap) {
+        minimap = L.map('minimap', {
+          zoomControl: false,
+          attributionControl: false
+        }).setView([frames[0].lat, frames[0].lon], 17);
+
+        L.tileLayer('/api/tile/hybrid/{z}/{x}/{y}', {
+          maxZoom: 20
+        }).addTo(minimap);
+
+        // 自定义车载导航指示箭头
+        const carIcon = L.divIcon({
+          className: 'car-marker-container',
+          html: '<div id="minimap-car-arrow" class="car-marker-icon"><div class="car-arrow"></div></div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        minimapCarMarker = L.marker([frames[0].lat, frames[0].lon], { icon: carIcon }).addTo(minimap);
+      }
+
+      // 绘制规划路径 (优先使用平滑滤波坐标，使直路保持直线)
+      const latlngs = frames.map(f => [f.smooth_lat || f.lat, f.smooth_lon || f.lon]);
+      if (minimapRouteLine) minimap.removeLayer(minimapRouteLine);
+      minimapRouteLine = L.polyline(latlngs, { color: '#38bdf8', weight: 4, opacity: 0.9 }).addTo(minimap);
+      minimap.setView(latlngs[0], 17);
+      setTimeout(() => minimap.invalidateSize(), 200);
+    }
+
+    async function initDriveEngine() {
+      if (driveEngineInitialized) {
+        // 重新加载 manifest
+        await reloadManifest();
+        return;
+      }
+      driveEngineInitialized = true;
+
+      const container = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+
+      // 广角相机，模拟车前挡风玻璃视角
+      camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1500);
+      camera.position.set(0, 0, 0);
+
+      // 双球架构: 错开半径与渲染层级，关闭 depthWrite 彻底杜绝 Z-fighting 深度撕裂
+      const geomA = new THREE.SphereGeometry(600, 64, 48);
+      geomA.scale(-1, 1, 1);
+      const matA = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 1.0,
+        depthWrite: false,
+        depthTest: false,
+      });
+      sphereA = new THREE.Mesh(geomA, matA);
+      sphereA.renderOrder = 1;
+      scene.add(sphereA);
+
+      const geomB = new THREE.SphereGeometry(598, 64, 48);
+      geomB.scale(-1, 1, 1);
+      const matB = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.0,
+        depthWrite: false,
+        depthTest: false,
+      });
+      sphereB = new THREE.Mesh(geomB, matB);
+      sphereB.renderOrder = 2;
+      scene.add(sphereB);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      container.appendChild(renderer.domElement);
+
+      setupDriveEvents();
+      await reloadManifest();
+
+      let lastTime = performance.now();
+      function driveLoop(now) {
+        requestAnimationFrame(driveLoop);
+        const dt = Math.min((now - lastTime) / 1000.0, 0.1);
+        lastTime = now;
+        updatePhysics(dt);
+        renderFrame();
+      }
+      requestAnimationFrame(driveLoop);
+    }
+
+    async function reloadManifest() {
+      const resp = await fetch('/streetview_route/route_manifest.json?' + Date.now());
+      driveManifest = await resp.json();
+      totalRouteDistance = driveManifest.total_distance;
+      currentDistance = 0.0;
+      speedMps = 0.0;
+      document.getElementById('hud-total-dist').innerText = totalRouteDistance.toFixed(1);
+
+      if (driveManifest.frames && driveManifest.frames.length > 0) {
+        initMinimap(driveManifest.frames);
+      }
+
+      // 预缓存前 6 帧
+      for (let i = 0; i < Math.min(6, driveManifest.frames.length); i++) {
+        getTexture(driveManifest.frames[i].image_file);
+      }
+    }
+
+    function getTexture(relPath) {
+      const url = '/streetview_route/' + relPath;
+      if (!texCache.has(url)) {
+        texCache.set(url, textureLoader.load(url));
+      }
+      return texCache.get(url);
+    }
+
+    // 终点抵达与延伸前行状态控制
+    let hasReachedDestination = false;
+    let extendDistanceKm = 2.0;
+
+    function updateExtendKm(val) {
+      let v = parseFloat(val);
+      if (isNaN(v) || v < 0.2) v = 0.2;
+      extendDistanceKm = v;
+      document.getElementById('slider-modal-ext').value = v;
+      document.getElementById('input-modal-ext').value = v;
+      document.getElementById('txt-modal-ext-km').innerText = v.toFixed(1);
+    }
+
+    function setExtendDistance(km) {
+      updateExtendKm(km);
+    }
+
+    function openDestinationModal() {
+      document.getElementById('destination-modal').style.display = 'flex';
+      document.getElementById('modal-download-box').style.display = 'none';
+      document.getElementById('btn-modal-extend').disabled = false;
+      document.getElementById('btn-modal-cancel').disabled = false;
+    }
+
+    function closeDestinationModal() {
+      document.getElementById('destination-modal').style.display = 'none';
+    }
+
+    // 根据当前点、行驶朝向和公里数，推算前方目标点经纬度 (大圆航向推算法)
+    function projectDestinationCoord(lat, lon, distanceKm, bearingDeg) {
+      const R = 6371.0;
+      const d = distanceKm / R;
+      const brng = THREE.MathUtils.degToRad(bearingDeg);
+      const lat1 = THREE.MathUtils.degToRad(lat);
+      const lon1 = THREE.MathUtils.degToRad(lon);
+
+      const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng));
+      const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d) * Math.cos(lat1), Math.cos(d) - Math.sin(lat1) * Math.sin(lat2));
+
+      return [THREE.MathUtils.radToDeg(lat2), THREE.MathUtils.radToDeg(lon2)];
+    }
+
+    async function startExtendRoute() {
+      if (!driveManifest || !driveManifest.frames || driveManifest.frames.length < 2) return;
+
+      const frames = driveManifest.frames;
+      const lastFrame = frames[frames.length - 1];
+      const prevFrame = frames[frames.length - 2];
+
+      // 获取当前终点位置与车头朝向
+      const startLat = lastFrame.smooth_lat || lastFrame.lat;
+      const startLon = lastFrame.smooth_lon || lastFrame.lon;
+      const currentHeading = lastFrame.drive_heading_deg || lastFrame.camera_heading_deg || 0;
+
+      // 推算延伸终点坐标
+      const [nextEndLat, nextEndLon] = projectDestinationCoord(startLat, startLon, extendDistanceKm, currentHeading);
+
+      const btnExtend = document.getElementById('btn-modal-extend');
+      const btnCancel = document.getElementById('btn-modal-cancel');
+      btnExtend.disabled = true;
+      btnCancel.disabled = true;
+
+      const progressBox = document.getElementById('modal-download-box');
+      const txtStep = document.getElementById('modal-download-step');
+      const txtPct = document.getElementById('modal-download-pct');
+      const fillBar = document.getElementById('modal-download-fill');
+      progressBox.style.display = 'block';
+      txtStep.innerText = `正在规划前方 ${extendDistanceKm.toFixed(1)} km 路线...`;
+      fillBar.style.width = '5%';
+      txtPct.innerText = '5%';
+
+      const stepMeters = getSelectedStepMeters();
+
+      try {
+        const resp = await fetch('/api/start_download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            start_lat: startLat,
+            start_lon: startLon,
+            end_lat: nextEndLat,
+            end_lon: nextEndLon,
+            lane_preference: selectedLane,
+            step_meters: stepMeters,
+            zoom_level: 3,
+            append_to_existing: true // 无缝追加模式
+          })
+        });
+
+        const res = await resp.json();
+        if (!res.success) {
+          alert("启动延伸下载失败: " + res.message);
+          btnExtend.disabled = false;
+          btnCancel.disabled = false;
+          return;
+        }
+
+        // 轮询下载进度
+        const timer = setInterval(async () => {
+          const sResp = await fetch('/api/download_status');
+          const status = await sResp.json();
+
+          txtStep.innerText = status.current_step;
+          if (status.total > 0) {
+            const pct = Math.min(100, Math.round((status.progress / status.total) * 100));
+            fillBar.style.width = pct + '%';
+            txtPct.innerText = pct + '%';
+          }
+
+          if (status.status === 'completed') {
+            clearInterval(timer);
+            txtStep.innerText = "后续路段下载完毕，正在载入并继续驾驶...";
+            fillBar.style.width = '100%';
+            txtPct.innerText = '100%';
+
+            setTimeout(async () => {
+              // 重新拉取合并后的路线索引，保持现有行驶里程不重置
+              const savedDistance = currentDistance;
+              const mResp = await fetch('/streetview_route/route_manifest.json?' + Date.now());
+              driveManifest = await mResp.json();
+              totalRouteDistance = driveManifest.total_distance;
+              currentDistance = savedDistance; // 保持在原终点位置
+              document.getElementById('hud-total-dist').innerText = totalRouteDistance.toFixed(1);
+
+              // 更新右下角小地图
+              if (driveManifest.frames && driveManifest.frames.length > 0) {
+                initMinimap(driveManifest.frames);
+              }
+
+              // 预加载新增加的后续图片
+              for (let i = frames.length; i < Math.min(frames.length + 8, driveManifest.frames.length); i++) {
+                getTexture(driveManifest.frames[i].image_file);
+              }
+
+              hasReachedDestination = false;
+              closeDestinationModal();
+
+              // 自动恢复巡航或低速启动，车辆流畅向前继续开
+              speedMps = 15 / 3.6; // 给一个 15km/h 的平滑起步速度
+            }, 800);
+          } else if (status.status === 'error') {
+            clearInterval(timer);
+            btnExtend.disabled = false;
+            btnCancel.disabled = false;
+            alert("下载失败: " + status.error_message);
+          }
+        }, 800);
+      } catch (err) {
+        console.error("延伸路线请求错误", err);
+        alert("延伸规划请求失败");
+        btnExtend.disabled = false;
+        btnCancel.disabled = false;
+      }
+    }
+
+    function updatePhysics(dt) {
+      if (cruiseMode) {
+        // 自动巡航以 35 km/h 匀速前进
+        const targetSpeed = 35 / 3.6;
+        if (speedMps < targetSpeed) speedMps = Math.min(targetSpeed, speedMps + ACCEL * dt);
+        else speedMps = Math.max(targetSpeed, speedMps - BRAKE * dt);
+      } else if (speedLockMode) {
+        // 车速锁定模式：用户踩油门或刹车时临时加减速，松开后自动维持/逼近所锁定的车速
+        if (keys.w) {
+          speedMps = Math.min(MAX_SPEED_MPS, speedMps + ACCEL * dt);
+        } else if (keys.s) {
+          speedMps = Math.max(-5.0, speedMps - BRAKE * dt);
+        } else {
+          // 松开油门或刹车，平稳维持锁定速度
+          if (speedMps < lockedSpeedMps) {
+            speedMps = Math.min(lockedSpeedMps, speedMps + ACCEL * 0.6 * dt);
+          } else if (speedMps > lockedSpeedMps) {
+            speedMps = Math.max(lockedSpeedMps, speedMps - BRAKE * 0.6 * dt);
+          }
+        }
+      } else {
+        // 正常自由驾驶模式 (自然滑行阻力)
+        if (keys.w) {
+          speedMps = Math.min(MAX_SPEED_MPS, speedMps + ACCEL * dt);
+        } else if (keys.s) {
+          speedMps = Math.max(-5.0, speedMps - BRAKE * dt); // 支持低速倒车
+        } else {
+          if (speedMps > 0) speedMps = Math.max(0, speedMps - FRICTION * dt);
+          else if (speedMps < 0) speedMps = Math.min(0, speedMps + FRICTION * dt);
+        }
+      }
+
+      currentDistance += speedMps * dt;
+      if (currentDistance < 0) currentDistance = 0;
+      if (currentDistance >= totalRouteDistance && totalRouteDistance > 0) {
+        currentDistance = totalRouteDistance;
+        speedMps = 0;
+        cruiseMode = false;
+        speedLockMode = false;
+
+        // 行驶到终点时弹出 UI 对话框
+        if (!hasReachedDestination) {
+          hasReachedDestination = true;
+          openDestinationModal();
+        }
+      } else if (currentDistance < totalRouteDistance - 5.0) {
+        // 如果倒车离开终点，重置到达标志
+        hasReachedDestination = false;
+      }
+
+      // 更新 HUD
+      const kmh = Math.abs(speedMps * 3.6).toFixed(0);
+      document.getElementById('hud-speed').innerText = kmh;
+      document.getElementById('hud-odometer').innerText = currentDistance.toFixed(1);
+      
+      const gearEl = document.getElementById('hud-gear');
+      if (cruiseMode) {
+        gearEl.innerText = "CRUISE (巡航)";
+        gearEl.style.color = "#38bdf8";
+      } else if (speedLockMode) {
+        const lockKmh = (lockedSpeedMps * 3.6).toFixed(0);
+        gearEl.innerText = `LOCKED (${lockKmh} km/h)`;
+        gearEl.style.color = "#eab308";
+      } else if (speedMps > 0.5) {
+        gearEl.innerText = "DRIVE (D)";
+        gearEl.style.color = "#4ade80";
+      } else if (speedMps < -0.2) {
+        gearEl.innerText = "REVERSE (R)";
+        gearEl.style.color = "#f43f5e";
+      } else {
+        gearEl.innerText = "PARK (P)";
+        gearEl.style.color = "#94a3b8";
+      }
+    }
+
+    function renderFrame() {
+      if (!driveManifest || !driveManifest.frames || driveManifest.frames.length < 2) return;
+      const frames = driveManifest.frames;
+
+      // 1. 二分定位当前行驶距离落在帧 i 与 i+1 之间
+      let idx = 0;
+      for (let i = 0; i < frames.length - 1; i++) {
+        if (currentDistance >= frames[i].accum_dist && currentDistance <= frames[i + 1].accum_dist) {
+          idx = i;
+          break;
+        }
+        if (i === frames.length - 2 && currentDistance > frames[i + 1].accum_dist) {
+          idx = i;
+        }
+      }
+
+      const fA = frames[idx];
+      const fB = frames[idx + 1] || fA;
+
+      // 在两帧之间的线性位移插值比率 t: 0.0 ~ 1.0
+      const segmentLen = Math.max(0.1, (fB.accum_dist || (fA.accum_dist + 1)) - fA.accum_dist);
+      const t = Math.max(0, Math.min(1, (currentDistance - fA.accum_dist) / segmentLen));
+
+      // 2. 空间平滑过渡与航向对齐 (融入用户手动纠偏 headingTrimDeg)
+      const trimRad = THREE.MathUtils.degToRad(headingTrimDeg);
+      sphereA.material.map = getTexture(fA.image_file);
+      sphereA.material.needsUpdate = true;
+      sphereA.rotation.y = THREE.MathUtils.degToRad((fA.drive_heading_deg - fA.camera_heading_deg)) + trimRad;
+
+      sphereB.material.map = getTexture(fB.image_file);
+      sphereB.material.needsUpdate = true;
+      sphereB.rotation.y = THREE.MathUtils.degToRad((fB.drive_heading_deg - fB.camera_heading_deg)) + trimRad;
+
+      // 3. 严格等能量无缝交叉淡入淡出 (Cross-fade)
+      // 使用标准的余弦-正弦旋转混合 (cos^2 + sin^2 = 1.0)，在整段过程中两张图的光能总和始终保持恒定 100%，杜绝闪烁暗影
+      const angle = t * Math.PI * 0.5;
+      sphereA.material.opacity = Math.cos(angle);
+      sphereB.material.opacity = Math.sin(angle);
+
+      // 4. 航向角连续平滑过渡 (消除急弯切角突兀)
+      let deltaHeading = (fB.drive_heading_deg || 0) - (fA.drive_heading_deg || 0);
+      if (deltaHeading > 180) deltaHeading -= 360;
+      if (deltaHeading < -180) deltaHeading += 360;
+      const smoothDriveHeading = (fA.drive_heading_deg || 0) + deltaHeading * t;
+
+      // 5. 零跳跃行车光流 (Optical Flow): 两侧路景自然向后飞驰推移
+      // 核心物理原理：
+      // 在两帧之间，前一帧 (sphereA) 模拟小车向前开近，通过等比放大让路两侧电线杆、树木和建筑逐渐拉大并后移；
+      // 下一帧 (sphereB) 则从适度缩小状态随着淡入逐渐平稳回归基准大小 (scale: 0.88 -> 1.0)；
+      // 如此一来，在换帧交界处 (t=1 -> t=0) sphereB 的尺寸恰好为 1.0，与下一段的起点 sphereA (尺寸 1.0) 形成完美闭环连续咬合！
+      // 彻底根除跳跃感，同时让整条路呈现出逼真的行车推移速度感！
+      if (flowStrength > 0) {
+        // 前一帧放大系数：从 1.0 平滑放大至 1.0 + 0.18 * flowStrength (如 1.18)
+        const scaleA = 1.0 + t * (0.18 * flowStrength);
+        sphereA.scale.set(-scaleA, scaleA, scaleA);
+
+        // 下一帧接力系数：从 1.0 - 0.12 * flowStrength (如 0.88) 平滑扩展至 1.0
+        const scaleB = 1.0 - (1.0 - t) * (0.12 * flowStrength);
+        sphereB.scale.set(-scaleB, scaleB, scaleB);
+
+        // 视车速产生轻微的挡风玻璃动感推移 (速度越快，视野越具穿透感)
+        const speedKmh = Math.abs(speedMps * 3.6);
+        const speedFovOffset = Math.min(10, (speedKmh / 120) * 4.0 * flowStrength);
+        if (camera) {
+          const targetFov = 80 + speedFovOffset;
+          if (Math.abs(camera.fov - targetFov) > 0.1) {
+            camera.fov = targetFov;
+            camera.updateProjectionMatrix();
+          }
+        }
+      } else {
+        sphereA.scale.set(-1, 1, 1);
+        sphereB.scale.set(-1, 1, 1);
+        if (camera && camera.fov !== 80) {
+          camera.fov = 80;
+          camera.updateProjectionMatrix();
+        }
+      }
+
+      // 保持相机在全景球中心原点，确保左右后视镜与全景透视严格不变形
+      camera.position.set(0, 0, 0);
+      sphereA.position.set(0, 0, 0);
+      sphereB.position.set(0, 0, 0);
+
+      // 相机综合朝向 = 连续航向角偏差 (两帧平滑过弯) + 驾驶员自由环顾 (lookLon, lookLat)
+      lookLat = Math.max(-80, Math.min(80, lookLat));
+      const phi = THREE.MathUtils.degToRad(90 - lookLat);
+      const carBaseTheta = THREE.MathUtils.degToRad(lookLon + deltaHeading * t - 90);
+
+      const targetX = 500 * Math.sin(phi) * Math.cos(carBaseTheta);
+      const targetY = 500 * Math.cos(phi);
+      const targetZ = 500 * Math.sin(phi) * Math.sin(carBaseTheta);
+      camera.lookAt(targetX, targetY, targetZ);
+
+      // HUD 状态更新
+      document.getElementById('hud-frame-idx').innerText = `${idx + 1} / ${frames.length}`;
+      document.getElementById('hud-interp-pct').innerText = `${Math.round(t * 100)}%`;
+      const currentCarHeading = ((smoothDriveHeading % 360 + 360) % 360);
+      document.getElementById('hud-heading').innerText = `${currentCarHeading.toFixed(1)}°`;
+
+      // 动态更新拍摄年份 (优先采用当前帧，若插值过半采用下一帧)
+      const curDate = (t < 0.5 ? fA.date : (fB.date || fA.date)) || "未知";
+      document.getElementById('hud-date').innerText = curDate;
+      document.getElementById('badge-capture-date').innerText = curDate;
+
+      // 实时更新右下角缩略小地图
+      if (minimap && minimapCarMarker) {
+        // 优先使用滤波后的平滑经纬度插值，确保小车沿平滑直线前进
+        const p1Lat = fA.smooth_lat || fA.lat;
+        const p1Lon = fA.smooth_lon || fA.lon;
+        const p2Lat = fB.smooth_lat || fB.lat;
+        const p2Lon = fB.smooth_lon || fB.lon;
+        const curLat = p1Lat + (p2Lat - p1Lat) * t;
+        const curLon = p1Lon + (p2Lon - p1Lon) * t;
+        minimapCarMarker.setLatLng([curLat, curLon]);
+        minimap.panTo([curLat, curLon], { animate: false });
+
+        // 旋转小车导航箭头朝向
+        const arrowEl = document.getElementById('minimap-car-arrow');
+        if (arrowEl) {
+          arrowEl.style.transform = `rotate(${currentCarHeading}deg)`;
+        }
+      }
+
+      // 动态预加载后续图片 (高速下扩大预加载窗口到 8 帧，确保 200km/h 依然丝滑)
+      for (let p = idx + 1; p <= idx + 8 && p < frames.length; p++) {
+        getTexture(frames[p].image_file);
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    function setupDriveEvents() {
+      window.addEventListener('resize', () => {
+        if (!camera || !renderer) return;
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      // 键盘控制
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') {
+          keys.w = true;
+          cruiseMode = false;
+        }
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') {
+          keys.s = true;
+          cruiseMode = false;
+        }
+        if (e.code === 'KeyU') {
+          // U 键: 锁定车速 / 恢复正常模式切换
+          speedLockMode = !speedLockMode;
+          if (speedLockMode) {
+            cruiseMode = false;
+            // 锁定当前瞬时车速 (若当前车速为 0 则默认锁定起步速度 20 km/h)
+            lockedSpeedMps = Math.max(20 / 3.6, speedMps);
+          }
+        }
+        if (e.code === 'Space') {
+          e.preventDefault();
+          cruiseMode = !cruiseMode;
+          if (cruiseMode) {
+            speedLockMode = false;
+            if (speedMps === 0) speedMps = 5.0;
+          }
+        }
+        if (e.code === 'KeyB') {
+          // B 键: 重新从起点驾驶
+          currentDistance = 0.0;
+          speedMps = 0.0;
+          cruiseMode = false;
+          speedLockMode = false;
+          hasReachedDestination = false;
+          closeDestinationModal();
+          lookLon = 0;
+          lookLat = 0;
+          if (camera) {
+            camera.fov = 80;
+            camera.updateProjectionMatrix();
+          }
+        }
+        if (e.code === 'BracketLeft') {
+          // [ 键: 车头航向向左微调 5 度
+          adjustHeadingTrim(-5);
+        }
+        if (e.code === 'BracketRight') {
+          // ] 键: 车头航向向右微调 5 度
+          adjustHeadingTrim(5);
+        }
+        if (e.code === 'KeyP') {
+          // P 键: 复位车头航向纠偏
+          setHeadingTrim(0);
+        }
+        if (e.code === 'KeyR') {
+          lookLon = 0;
+          lookLat = 0;
+          if (camera) {
+            camera.fov = 80;
+            camera.updateProjectionMatrix();
+          }
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') {
+          keys.w = false;
+          // 若在锁定车速模式下，松开油门时锁定最新达到的车速
+          if (speedLockMode && speedMps > 0) {
+            lockedSpeedMps = speedMps;
+          }
+        }
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') {
+          keys.s = false;
+          // 若在锁定车速模式下，松开刹车时锁定减速后的车速
+          if (speedLockMode && speedMps > 0) {
+            lockedSpeedMps = speedMps;
+          }
+        }
+      });
+
+      // 鼠标拖拽环顾
+      const container = document.getElementById('canvas-container');
+      container.addEventListener('pointerdown', (e) => {
+        isMouseDown = true;
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+      });
+      document.addEventListener('pointermove', (e) => {
+        if (!isMouseDown) return;
+        lookLon += (mouseX - e.clientX) * 0.15;
+        lookLat += (e.clientY - mouseY) * 0.15;
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+      });
+      document.addEventListener('pointerup', () => { isMouseDown = false; });
+
+      // 鼠标滚轮平滑缩放街景视野 (FOV)
+      container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (!camera) return;
+        // 向上滚缩小 FOV (放大街景细节)，向下滚增大 FOV (广角全景)
+        const zoomStep = e.deltaY * 0.05;
+        camera.fov = THREE.MathUtils.clamp(camera.fov + zoomStep, 30, 100);
+        camera.updateProjectionMatrix();
+      }, { passive: false });
+    }
+
+    // 导航标签切换
+    document.getElementById('nav-map').onclick = () => switchView('map');
+    document.getElementById('nav-drive').onclick = () => {
+      switchView('drive');
+      initDriveEngine();
+    };
+
+    window.onload = initMap;
+  </script>
+</body>
+</html>

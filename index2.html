@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>离线街景虚拟驾驶模拟器 | StreetView Simulator</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- jQuery -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Leaflet Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body { user-select: none; overflow: hidden; background-color: #090d16; }
+    /* 自定义进度条样式 */
+    input[type="range"] { -webkit-appearance: none; background: transparent; }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px; border-radius: 999px; background: #334155;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+      background: #38bdf8; margin-top: -5px; cursor: pointer;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
+      transition: transform 0.15s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+    /* 深色科技感地图滤镜 */
+    .leaflet-tile-pane { filter: brightness(0.88) contrast(1.08) saturate(0.85); }
+    .car-marker-wrapper { transition: transform 0.15s ease-out; }
+  </style>
+</head>
+<body class="text-slate-100 h-screen w-screen flex flex-col">
+
+  <!-- 顶部状态与仪表栏 -->
+  <header class="h-14 bg-slate-900/95 border-b border-slate-800 px-4 flex items-center justify-between z-20 shrink-0">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-sky-500/15 border border-sky-500/40 flex items-center justify-center text-sky-400">
+        <!-- 原生 SVG 方向盘图标 -->
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <circle cx="12" cy="12" r="2.5" />
+          <path stroke-linecap="round" d="M12 14.5V21M9.5 11.5L3.5 9.5M14.5 11.5l6-2" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-sm font-bold tracking-wider text-slate-100 flex items-center gap-2">
+          STREETVIEW DRIVE SIM
+          <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">OFFLINE 360°</span>
+        </h1>
+        <p id="status-subtitle" class="text-xs text-slate-400 font-mono">正在加载本地路线索引 route_manifest.json...</p>
+      </div>
+    </div>
+
+    <!-- 实时行车遥测数据 -->
+    <div class="hidden md:flex items-center space-x-6 font-mono text-xs">
+      <div class="bg-slate-800/70 px-3 py-1.5 rounded-md border border-slate-700/70">
+        <span class="text-slate-400">帧序:</span>
+        <span id="hud-frame" class="text-sky-400 font-bold ml-1">0 / 0</span>
+      </div>
+      <div class="bg-slate-800/70 px-3 py-1.5 rounded-md border border-slate-700/70">
+        <span class="text-slate-400">经纬度:</span>
+        <span id="hud-coord" class="text-emerald-400 ml-1">--.-----, --.-----</span>
+      </div>
+      <div class="bg-slate-800/70 px-3 py-1.5 rounded-md border border-slate-700/70">
+        <span class="text-slate-400">车头/视线:</span>
+        <span id="hud-heading" class="text-amber-400 ml-1">0° / 0°</span>
+      </div>
+      <div class="bg-slate-800/70 px-3 py-1.5 rounded-md border border-slate-700/70">
+        <span class="text-slate-400">采集日期:</span>
+        <span id="hud-date" class="text-slate-200 ml-1">----</span>
+      </div>
+    </div>
+
+    <!-- 手动导入 JSON 按钮（应急使用） -->
+    <div>
+      <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-2 rounded-lg border border-slate-700 flex items-center space-x-1.5 transition">
+        <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        <span>手动加载 JSON</span>
+        <input type="file" id="file-manifest-input" accept=".json" class="hidden" />
+      </label>
+    </div>
+  </header>
+
+  <!-- 主视窗：左侧 360° 街景驾驶舱 + 右侧 GPX 同步轨迹地图 -->
+  <main class="flex-1 flex flex-col lg:flex-row relative overflow-hidden">
+
+    <!-- 左侧：Three.js 360° 全
